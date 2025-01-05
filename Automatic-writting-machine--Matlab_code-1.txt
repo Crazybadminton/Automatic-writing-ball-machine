@@ -1,0 +1,276 @@
+% === 初始化設定 ===
+% 1. 輸入參數
+sphereRadius = input('Enter the sphere radius (mm): '); % 輸入球體半徑
+scaleFactor = input('Enter the scale factor (0.5 for half size, 1 for full size): '); % 輸入縮放因子
+thetaFactor = input('Enter the theta factor (default is pi): '); % 輸入投影角度參數
+
+% === 匯入與解析 PNG 圖像 ===
+imgPath = 'C:\Users\user\Desktop\sketch_test\your_image.png'; % 替換為圖像的路徑
+img = imread(imgPath); % 讀取 PNG 圖像
+disp('Image successfully loaded.');
+
+% 將彩色圖像轉換為灰度圖像
+if size(img, 3) == 3
+    imgGray = rgb2gray(img);
+    disp('Image converted to grayscale.');
+else
+    imgGray = img;
+    disp('Image is already grayscale.');
+end
+
+% 二值化處理
+threshold = 128; % 設置二值化閾值
+imgBinary = imgGray < threshold;
+disp('Binary conversion complete.');
+
+% 提取邊界或輪廓
+[B, L] = bwboundaries(imgBinary, 'noholes'); % 提取邊界
+disp('Image contours extracted.');
+
+% === 繪製結果 ===
+% 1. 顯示原始圖像
+figure;
+subplot(1, 2, 1);
+imshow(img);
+title('Original Image');
+
+% 2. 顯示二值化結果和輪廓
+subplot(1, 2, 2);
+imshow(imgBinary);
+hold on;
+for k = 1:length(B)
+    boundary = B{k};
+    plot(boundary(:, 2), boundary(:, 1), 'r', 'LineWidth', 1.5); % 繪製輪廓
+end
+title('Binary Image with Contours');
+disp('Plotting complete.');
+
+% === 輸出邊界座標 ===
+% 將所有邊界點整合到一個座標矩陣中
+allContours = [];
+for k = 1:length(B)
+    allContours = [allContours; B{k}];
+end
+
+% 將座標轉為標準形式 (x, y)
+xCoords = allContours(:, 2);
+yCoords = allContours(:, 1);
+
+% 繪製二維座標系
+figure;
+plot(xCoords, yCoords, 'b.', 'MarkerSize', 1.5);
+axis equal;
+title('Extracted Contours in 2D Coordinate System');
+xlabel('X Axis (mm)');
+ylabel('Y Axis (mm)');
+grid on;
+disp('2D plotting complete.');
+
+% === 第二部分：撒點並進行球面投影 ===
+
+% 對邊界進行插值，增加點的密度
+numInterpPoints = 1000; % 插值後的點數量
+t = linspace(1, length(xCoords), numInterpPoints);
+xInterp = interp1(1:length(xCoords), xCoords, t, 'linear'); % 插值 X 座標
+yInterp = interp1(1:length(yCoords), yCoords, t, 'linear'); % 插值 Y 座標
+
+% 縮放座標到球體活動範圍
+verticalLimit = 50 / 2; % 垂直方向的限制 (±25 mm)
+circumferenceLength = 50; % 圓周方向限制 (mm)
+
+% 縮放水平和垂直範圍
+xInterp = (xInterp - min(xInterp)) / (max(xInterp) - min(xInterp)) * circumferenceLength * scaleFactor; % 縮放水平範圍
+yInterp = (yInterp - min(yInterp)) / (max(yInterp) - min(yInterp)) * verticalLimit * 2 * scaleFactor - verticalLimit * scaleFactor; % 縮放垂直範圍
+
+% 轉換至球面座標
+theta = xInterp / circumferenceLength * thetaFactor; % 方位角 (水平繞一圈)
+phi = acos(yInterp / sphereRadius); % 俯仰角 (限制在垂直範圍內)
+
+% 計算球面三維座標
+X = sphereRadius * sin(phi) .* cos(theta); % X 軸
+Y = sphereRadius * sin(phi) .* sin(theta); % Y 軸
+Z = sphereRadius * cos(phi);               % Z 軸
+
+% === 繪製三維球面和縮放後的投影結果 ===
+figure;
+hold on;
+
+% 繪製球體表面，確保球心在原點
+[xSphere, ySphere, zSphere] = sphere(50); % 生成球面網格
+surf(sphereRadius * xSphere, sphereRadius * ySphere, sphereRadius * zSphere, ...
+    'FaceAlpha', 0.3, 'EdgeColor', 'none', 'FaceColor', 'interp');
+colormap('jet');
+
+% 繪製投影軌跡
+plot3(X, Y, Z, 'r-', 'LineWidth', 1);
+
+% 標註原點 (紅色點)
+plot3(0, 0, 0, 'r.', 'MarkerSize', 15); % 將紅點放置在球心
+plot3(sphereRadius, 0, 0, 'r.', 'MarkerSize', 15); % 球體初始點
+
+% 繪製藍色範圍指引線
+thetaGuide = linspace(0, 2 * pi, 100);
+ZTop = ones(size(thetaGuide)) * verticalLimit; % 上限
+ZBottom = ones(size(thetaGuide)) * -verticalLimit; % 下限
+XGuide = sphereRadius * cos(thetaGuide);
+YGuide = sphereRadius * sin(thetaGuide);
+plot3(XGuide, YGuide, ZTop, 'b--', 'LineWidth', 1.5);
+plot3(XGuide, YGuide, ZBottom, 'b--', 'LineWidth', 1.5);
+
+% 圖像標題與軸標籤 (附單位 mm)
+title('Scaled Projected Path on Limited Sphere Surface with Origin');
+xlabel('X Axis (mm)');
+ylabel('Y Axis (mm)');
+zlabel('Z Axis (mm)');
+axis equal;
+grid on;
+
+% 固定視角以保持軸方向不變
+view(45, 30); % 您可以根據需要調整視角
+
+% 設置坐標軸範圍以確保球體和投影完整顯示
+axis([-sphereRadius sphereRadius -sphereRadius sphereRadius -sphereRadius sphereRadius]);
+
+hold off;
+
+disp('Scaled projection with origin completed.');
+
+% === 第三部分：生成投影路徑並可視化 ===
+
+% 將三維投影路徑數據組合成表格
+pathData = [X(:), Y(:), Z(:)]; % 投影後的路徑數據 (三維坐標)
+disp('Projected path data extracted:');
+disp(pathData);
+
+% 保存數據為表格，方便進一步處理
+pathTable = array2table(pathData, 'VariableNames', {'X', 'Y', 'Z'});
+disp('Path data saved to table:');
+disp(pathTable);
+
+% === 繪製三維路徑，確認提取數據的準確性 ===
+figure;
+plot3(pathTable.X, pathTable.Y, pathTable.Z, 'r-', 'LineWidth', 2); % 投影路徑
+hold on;
+
+% 繪製球體初始點
+plot3(0, 0, 0, 'k.', 'MarkerSize', 15); % 原點
+plot3(sphereRadius, 0, 0, 'r.', 'MarkerSize', 15); % 初始點 (R, 0, 0)
+
+% 標註軸和標題
+title('Projected 3D Path on Sphere Surface');
+xlabel('X Axis (mm)');
+ylabel('Y Axis (mm)');
+zlabel('Z Axis (mm)');
+grid on;
+axis equal;
+
+% 設定視角
+view(45, 30);
+
+disp('3D path visualization complete.');
+
+
+% === 第四部分：運動參數計算與累計運動指令生成 ===
+
+% 步進馬達參數設定
+stepsPerRevolution = 200; % 每圈步數 (1.8°/步)
+stepDistance = 0.04;      % X/Z 軸步距 (mm/步，根據實驗校準)
+stepsPerDegree = stepsPerRevolution / 360; % 每度步數 (Y 軸)
+
+% 初始化累計變量
+accumulatedX = 0; 
+accumulatedY = 0; 
+accumulatedZ = 0; 
+
+% 初始化存儲運動指令的矩陣
+motorCommands = []; 
+
+% 遍歷路徑點，計算運動參數
+for i = 2:size(pathData, 1)
+    % 計算相鄰點之間的差值
+    deltaX = pathData(i, 1) - pathData(i - 1, 1); % X 軸差值
+    deltaY = pathData(i, 2) - pathData(i - 1, 2); % Y 軸差值
+    deltaZ = pathData(i, 3) - pathData(i - 1, 3); % Z 軸差值
+
+    % 累加差值
+    accumulatedX = accumulatedX + deltaX;
+    accumulatedY = accumulatedY + deltaY;
+    accumulatedZ = accumulatedZ + deltaZ;
+
+    % 計算當前 Z 對應的球面半徑 R'
+    currentRadius = sqrt(sphereRadius^2 - pathData(i, 3)^2);
+
+    % === 動態步數計算 ===
+    % X馬達步數
+    if abs(accumulatedX) > stepDistance
+        stepsX = round(accumulatedX / stepDistance);
+        accumulatedX = 0; % 清空累計
+    else
+        stepsX = 0;
+    end
+
+    % Y馬達步數
+    theta = accumulatedY / (2 * pi * currentRadius) * 360; % 計算角度
+    if abs(theta) > 1 % 如果角度累計超過 1°
+        stepsY = round(theta * stepsPerDegree);
+        accumulatedY = 0; % 清空累計
+    else
+        stepsY = 0;
+    end
+
+    % Z馬達步數
+    if abs(accumulatedZ) > stepDistance
+        stepsZ = round(accumulatedZ / stepDistance);
+        accumulatedZ = 0; % 清空累計
+    else
+        stepsZ = 0;
+    end
+
+    % 儲存指令到矩陣
+    motorCommands = [motorCommands; stepsX, stepsY, stepsZ]; %#ok<AGROW>
+end
+
+% === 顯示運動指令 ===
+disp('Generated Motor Commands:');
+motorCommandsTable = array2table(motorCommands, ...
+    'VariableNames', {'StepsX', 'StepsY', 'StepsZ'});
+disp(motorCommandsTable);
+
+% === 第五部分：與 Arduino 通信 ===
+
+% 設置 Arduino 串口參數
+arduinoCOM = 'COM19'; % 修改為您的 Arduino 串口號
+baudRate = 9600;      % 波特率
+
+% 建立串口連接
+serialPort = serialport(arduinoCOM, baudRate);
+disp('Connected to Arduino.');
+
+% 固定指令間延遲時間 (ms)
+delayTime = 2000; % 每個指令間的延遲時間
+
+% 傳送每個運動指令到 Arduino
+for i = 1:size(motorCommands, 1)
+    % 提取當前指令的步數
+    stepsX = motorCommands(i, 1);
+    stepsY = motorCommands(i, 2);
+    stepsZ = motorCommands(i, 3);
+
+    % 組合指令字串
+    command = sprintf('X%dY%dZ%dD%d\n', stepsX, stepsY, stepsZ, delayTime);
+    
+    % 發送指令到 Arduino
+    writeline(serialPort, command);
+    disp(['Command Sent: ' command]);
+
+    % 等待 Arduino 回應
+    response = readline(serialPort);
+    disp(['Arduino Response: ' response]);
+
+    % 每個指令間加入延遲
+    pause(delayTime / 1000); % 轉換為秒
+end
+
+% 關閉串口
+clear serialPort;
+disp('Arduino communication complete.');

@@ -1,0 +1,238 @@
+
+% === 初始化設定 ===
+% 1. 輸入參數
+sphereRadius = input('Enter the sphere radius (mm): ');
+scaleFactor = input('Enter the scale factor (0.5 for half size, 1 for full size): ');
+thetaFactor = input('Enter the theta factor (default is pi): ');
+
+% === 匯入與解析 PNG 圖像 ===
+imgPath = 'C:\Users\user\Desktop\sketch_test\your_image.png'; % 替換為圖像的路徑
+img = imread(imgPath); % 讀取 PNG 圖像
+disp('Image successfully loaded.');
+
+% 將彩色圖像轉換為灰度圖像
+if size(img, 3) == 3
+    imgGray = rgb2gray(img);
+    disp('Image converted to grayscale.');
+else
+    imgGray = img;
+    disp('Image is already grayscale.');
+end
+
+% 二值化處理
+threshold = 128;
+imgBinary = imgGray < threshold;
+disp('Binary conversion complete.');
+
+% 提取邊界或輪廓
+[B, L] = bwboundaries(imgBinary, 'noholes');
+disp('Image contours extracted.');
+
+% === 繪製結果 ===
+% 1. 顯示原始圖像
+figure;
+subplot(1, 2, 1);
+imshow(img);
+title('Original Image');
+
+% 2. 顯示二值化結果和輪廓
+subplot(1, 2, 2);
+imshow(imgBinary);
+hold on;
+for k = 1:length(B)
+    boundary = B{k};
+    plot(boundary(:, 2), boundary(:, 1), 'r', 'LineWidth', 1.5); % 繪製輪廓
+end
+title('Binary Image with Contours');
+disp('Plotting complete.');
+
+% === 輸出邊界座標 ===
+% 將所有輪廓點整合到一個座標矩陣中
+allContours = [];
+for k = 1:length(B)
+    allContours = [allContours; B{k}];
+end
+
+% 將座標轉為標準形式 (x, y)
+xCoords = allContours(:, 2);
+yCoords = allContours(:, 1);
+
+% 繪製二維座標系
+figure;
+plot(xCoords, yCoords, 'b.', 'MarkerSize', 1);
+axis equal;
+title('Extracted Contours in 2D Coordinate System');
+xlabel('X Axis');
+ylabel('Y Axis');
+grid on;
+disp('2D plotting complete.');
+
+% === 設定球體與範圍參數 ===
+R = sphereRadius; % 球體半徑
+verticalLimit = 50 / 2; % 垂直方向的限制 (從原點上下各 25 毫米)
+circumferenceLength = 50; % 圓周方向限制
+
+% 提取原始平面座標
+xCoords = allContours(:, 2);
+yCoords = allContours(:, 1);
+
+% 對座標進行插值，增加點的密度
+numInterpPoints = 1000; % 插值後的點數量
+t = linspace(1, length(xCoords), numInterpPoints);
+xInterp = interp1(1:length(xCoords), xCoords, t, 'linear');
+yInterp = interp1(1:length(yCoords), yCoords, t, 'linear');
+
+% 縮放參數設定--------------------
+xInterp = (xInterp - min(xInterp)) / (max(xInterp) - min(xInterp)) * circumferenceLength * scaleFactor; % 縮放水平範圍
+yInterp = (yInterp - min(yInterp)) / (max(yInterp) - min(yInterp)) * verticalLimit * 2 * scaleFactor - verticalLimit * scaleFactor; % 縮放垂直範圍
+
+% 轉換至球面座標----------------
+theta = xInterp / circumferenceLength * thetaFactor; % 方位角 (水平繞一圈)
+phi = acos(yInterp / R); % 俯仰角 (限制在垂直範圍內)
+
+% 計算球面三維座標
+X = R * sin(phi) .* cos(theta); % X 軸
+Y = R * sin(phi) .* sin(theta); % Y 軸
+Z = R * cos(phi);               % Z 軸
+
+% === 繪製三維球面和縮放後的投影結果 ===
+figure;
+hold on;
+
+% 繪製球體表面，確保球心在原點
+[xSphere, ySphere, zSphere] = sphere(50); % 生成球面網格
+surf(R * xSphere, R * ySphere, R * zSphere, 'FaceAlpha', 0.3, 'EdgeColor', 'none', 'FaceColor', 'interp');
+colormap('jet');
+
+% 繪製投影軌跡
+plot3(X, Y, Z, 'r-', 'LineWidth', 1);
+
+% 標註原點 (紅色點)
+plot3(0, 0, 0, 'r.', 'MarkerSize', 10); % 將紅點放置在球心
+plot3(R, 0, 0, 'r.', 'MarkerSize', 15);
+
+% 繪製藍色範圍指引線
+thetaGuide = linspace(0, 2 * pi, 100);
+ZTop = ones(size(thetaGuide)) * verticalLimit; % 上限
+ZBottom = ones(size(thetaGuide)) * -verticalLimit; % 下限
+XGuide = R * cos(thetaGuide);
+YGuide = R * sin(thetaGuide);
+plot3(XGuide, YGuide, ZTop, 'b--', 'LineWidth', 1.5);
+plot3(XGuide, YGuide, ZBottom, 'b--', 'LineWidth', 1.5);
+
+% 圖像標題與軸標籤
+title('Scaled Projected Path on Limited Sphere Surface with Origin');
+xlabel('X Axis');
+ylabel('Y Axis');
+zlabel('Z Axis');
+axis equal;
+grid on;
+
+% 固定視角以保持軸方向不變
+view(45, 30); % 您可以根據需要調整視角
+
+% 設置坐標軸範圍以確保球體和投影完整顯示
+axis([-R R -R R -R R]);
+
+hold off;
+
+disp('Scaled projection with origin completed.');
+
+% === 提取轉折點並生成路徑參數 ===
+turnPoints = detectTurnPoints([X(:), Y(:), Z(:)]); % 檢測轉折點
+
+% === 繪製轉折點 ===
+figure;
+plot3(X, Y, Z, 'r--');
+hold on;
+plot3(turnPoints(:, 1), turnPoints(:, 2), turnPoints(:, 3), 'bo-', 'LineWidth', 2);
+title('Detected Turn Points');
+xlabel('X Axis (mm)');
+ylabel('Y Axis (mm)');
+zlabel('Z Axis (mm)');
+grid on;
+axis equal;
+
+% === 生成功動指令 ===
+motorCommands = generateMotorCommands(turnPoints, R);
+
+% === 顯示運動指令 ===
+disp('Generated motor commands:');
+motorCommandsTable = array2table(motorCommands, 'VariableNames', {'StepsX', 'StepsY', 'StepsZ'});
+disp(motorCommandsTable);
+
+% === 自定義函數 ===
+function turnPoints = detectTurnPoints(pathData)
+    % 檢測轉折點 (基於角度變化)
+    turnPoints = pathData(1, :); % 初始化
+    for i = 2:size(pathData, 1) - 1
+        v1 = pathData(i, :) - pathData(i - 1, :); % 向量1
+        v2 = pathData(i + 1, :) - pathData(i, :); % 向量2
+        angle = acos(dot(v1, v2) / (norm(v1) * norm(v2))); % 計算角度
+        if angle > pi / 6 % 如果角度大於 30 度
+            turnPoints = [turnPoints; pathData(i, :)]; %#ok<AGROW>
+        end
+    end
+    turnPoints = [turnPoints; pathData(end, :)]; % 添加最後一點
+end
+
+function motorCommands = generateMotorCommands(turnPoints, R)
+    % 根據轉折點生成馬達運動指令
+    stepsPerRevolution = 200;
+    stepDistance = 0.04;
+    stepsPerDegree = stepsPerRevolution / 360;
+
+    motorCommands = [];
+    for i = 2:size(turnPoints, 1)
+        deltaX = turnPoints(i, 1) - turnPoints(i - 1, 1);
+        deltaY = turnPoints(i, 2) - turnPoints(i - 1, 2);
+        deltaZ = turnPoints(i, 3) - turnPoints(i - 1, 3);
+
+        stepsX = round(deltaX / stepDistance);
+        radius = sqrt(R^2 - turnPoints(i, 3)^2);
+        angleY = deltaY / (2 * pi * radius) * 360;
+        stepsY = round(angleY * stepsPerDegree);
+        stepsZ = round(deltaZ / stepDistance);
+
+        motorCommands = [motorCommands; stepsX, stepsY, stepsZ]; %#ok<AGROW>
+    end
+end
+
+% === 第五部分：與 Arduino 通信 ===
+
+% 設置 Arduino 串口參數
+arduinoCOM = 'COM19'; % 修改為您的 Arduino 串口號
+baudRate = 9600;      % 波特率
+
+% 建立串口連接
+serialPort = serialport(arduinoCOM, baudRate);
+disp('Connected to Arduino.');
+
+% 固定指令間延遲時間 (ms)
+delayTime = 2000; % 每個指令間的延遲時間
+
+% 傳送每個運動指令到 Arduino
+for i = 1:size(motorCommands, 1)
+    % 提取當前指令的步數
+    stepsX = motorCommands(i, 1);
+    stepsY = motorCommands(i, 2);
+    stepsZ = motorCommands(i, 3);
+
+    % 組合指令字串
+    command = sprintf('X%dY%dZ%dD%d\n', stepsX, stepsY, stepsZ, delayTime);
+    
+    % 發送指令到 Arduino
+    writeline(serialPort, command);
+    disp(['Command Sent: ' command]);
+
+    % 等待 Arduino 回應
+    response = readline(serialPort);
+    disp(['Arduino Response: ' response]);
+
+    % 每個指令間加入延遲
+    pause(delayTime / 1000); % 轉換為秒
+end
+
+% 關閉串口
+clear serialPort;
+disp('Arduino communication complete.');
