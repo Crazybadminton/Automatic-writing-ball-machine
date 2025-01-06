@@ -1,0 +1,79 @@
+
+#define XSTEP_PIN 5   // X 軸 STEP 腳位
+#define XDIR_PIN 2    // X 軸 DIR 腳位
+#define YSTEP_PIN 6   // Y 軸 STEP 腳位
+#define YDIR_PIN 3    // Y 軸 DIR 腳位
+#define ZSTEP_PIN 7   // Z 軸 STEP 腳位
+#define ZDIR_PIN 4    // Z 軸 DIR 腳位
+#define ENABLE_PIN 8  // 馬達驅動器啟用腳位
+
+const int stepsPerRevolution = 200; // 每圈步數 (1.8°/步)
+int defaultDelayTime = 1000;        // 固定延遲時間 (微秒)
+
+bool invertX = false; // X 軸反轉
+bool invertY = true;  // Y 軸反轉
+bool invertZ = true;  // Z 軸反轉
+
+void setup() {
+  Serial.begin(9600); 
+  pinMode(XSTEP_PIN, OUTPUT);
+  pinMode(XDIR_PIN, OUTPUT);
+  pinMode(YSTEP_PIN, OUTPUT);
+  pinMode(YDIR_PIN, OUTPUT);
+  pinMode(ZSTEP_PIN, OUTPUT);
+  pinMode(ZDIR_PIN, OUTPUT);
+  pinMode(ENABLE_PIN, OUTPUT);
+  digitalWrite(ENABLE_PIN, LOW); 
+  Serial.println("System ready. Waiting for commands...");
+}
+
+void loop() {
+  if (Serial.available()) {
+    String command = Serial.readStringUntil('\n');
+    command.trim(); // 去除多餘的空白字符
+
+    if (command.startsWith("X") && command.indexOf("Y") > 0 && command.indexOf("Z") > 0) {
+      parseCommand(command);
+    } else {
+      Serial.println("Invalid command format. Use: X<int>Y<int>Z<int>D<int>");
+    }
+  }
+}
+
+void parseCommand(String command) {
+  int stepsX = 0, stepsY = 0, stepsZ = 0, delayTime = defaultDelayTime;
+
+  // 解析指令格式 X<int>Y<int>Z<int>D<int>
+  sscanf(command.c_str(), "X%dY%dZ%dD%d", &stepsX, &stepsY, &stepsZ, &delayTime);
+
+  // 設置方向
+  digitalWrite(XDIR_PIN, (stepsX > 0) ^ invertX ? HIGH : LOW);
+  digitalWrite(YDIR_PIN, (stepsY > 0) ^ invertY ? HIGH : LOW);
+  digitalWrite(ZDIR_PIN, (stepsZ > 0) ^ invertZ ? HIGH : LOW);
+
+  // 執行步進
+  moveSteps(abs(stepsX), abs(stepsY), abs(stepsZ), delayTime);
+
+  // 回應完成訊息
+  Serial.println("DONE");
+
+  // 指令間延遲兩秒鐘
+  delay(2000); // 延遲 2 秒
+}
+
+void moveSteps(int stepsX, int stepsY, int stepsZ, int delayTime) {
+  int maxSteps = max(stepsX, max(stepsY, stepsZ));
+  for (int i = 0; i < maxSteps; i++) {
+    if (i < stepsX) digitalWrite(XSTEP_PIN, HIGH);
+    if (i < stepsY) digitalWrite(YSTEP_PIN, HIGH);
+    if (i < stepsZ) digitalWrite(ZSTEP_PIN, HIGH);
+
+    delayMicroseconds(delayTime);
+
+    digitalWrite(XSTEP_PIN, LOW);
+    digitalWrite(YSTEP_PIN, LOW);
+    digitalWrite(ZSTEP_PIN, LOW);
+
+    delayMicroseconds(delayTime);
+  }
+}
